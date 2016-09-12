@@ -95,7 +95,7 @@ $(DIRS) :
 sources : myscrapexamp.w $(DIRS)
 	$(NUWEB) myscrapexamp.w
 
-jetty : sources
-	cd .. && mvn jetty:run
+test : sources
+	cd .. && python scrape.py 1051970
 
 

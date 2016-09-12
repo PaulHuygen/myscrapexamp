@@ -44,10 +44,11 @@ m4_define(m4_nuwebURL, `nuweb.sourceforge.net')m4_dnl
 m4_dnl
 m4_dnl Miscellaneous
 m4_dnl
-m4_define(m4_tarurl, `ragingbull.com')m4_dnl
+m4_dnl m4_define(m4_tarurl, `ragingbull.com')m4_dnl
+m4_define(m4_tarurl, `http://web.archive.org/web/20160323072944/http://ragingbull.com')m4_dnl
 m4_define(m4_CEVTboardnum, `14242')m4_dnl
-
-
+m4_define(m4_topicURL, `http://web.archive.org/web/20160719235030/http://ragingbull.com/forum/topic/1051970')
+m4_define(m4_testfile, `1051970')m4_dnl
 m4_dnl
 m4_dnl max times to compile with LaTeX.
 m4_dnl

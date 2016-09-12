@@ -9,6 +9,7 @@ m4_include(inst.m4)m4_dnl
 \newcommand{\thedoctitle}{m4_doctitle}
 \newcommand{\theauthor}{m4_author}
 \newcommand{\thesubject}{m4_subject}
+\newcommand{\NAF}{\textsc{naf}}
 \title{\thedoctitle}
 \author{\theauthor}
 \date{m4_docdate}
@@ -84,20 +85,244 @@ def print_post(board_id, board_name, topic, seq, author, post_date, text):
 \label{sec:program}
 
 
-
 \subsection{Read the command-line}
 \label{sec:read-commandline}
 
-ˆThe title of this section is mesleading, because in this demo-phase
-we are not going to read the command-line. We just read a
-pre-programmed forum board.
+I this demo-phase we can either parse url \url{m4_topicURL}, or parse
+a file of which the name is mentioned in the first argument.
+
 
 @d get program options @{@%
-
 boardnum = m4_CEVTboardnum
+topicURL = "m4_topicURL"
 
-@| boardnum @}
+infile = 'none'
+if len(sys.argv) > 1:
+    infile = sys.argv[1]
 
+@| boardnum topicURL @}
+
+\subsection{BeautifulSoup}
+\label{sec:beautifulsoup}
+
+We will use Python's \href{https://pypi.python.org/pypi/beautifulsoup4}{BeautifulSoup} module to extract the posts
+from the forum. 
+
+@d import modules in main program @{@%
+from bs4 import BeautifulSoup
+import requests
+@| bs4 BeautifulSoup requests @}
+
+\subsection{Extract the posts from a topic page}
+\label{sec:extractpost}
+
+A topic page contains a number of posts, wrapped in
+\verb|<article>|/\verb|</article>| tags. Between these two tags we can
+find:
+\begin{description}
+\item[Post-id:] as argument ``id'' in the \verb|article| tag.
+\item[Author name:] In a tag ``header'', in a \verb|div|
+  ``author-and-time'', in an anchor of class ``author-name''.
+\end{description}
+
+
+@d methods of the main program @{@%
+
+def next_article(soup, postnum=0):
+     for article in soup.find_all("article"):
+         postnum += 1
+         header = article.header
+         for sp in header.find_all("span"):
+             if sp['class'][0] == "postId":
+                 postid = sp.string
+             elif sp['class'][0] == "time":
+                 posttime = sp.string
+         for div in header.find_all("div"):
+             if div['class'][0] =="author-and-time":
+                 for anchor in div.find_all("a"):
+                     if anchor['class'][0] == "author-name":
+                         author=anchor.string
+                         author_url = anchor.href
+         text = article.textarea.string         
+         yield [ postid, posttime, postnum, author, author_url, text ] 
+
+@| nextarticle @}
+
+
+\subsection{Generate the NAF file}
+\label{sec:Generate-naf}
+
+
+Generate the \NAF{} file with the \href{https://github.com/cltl/KafNafParserPy}{KafNafParserPy} package. 
+
+@d import modules in main program @{@%
+import KafNafParserPy
+@| @}
+
+If you construct a \naf{} from scratch, it doesn't have a header section. To work around this, we read in a template of a \NAF{} file
+that contains an empty header. Fill in the header, add a \verb|raw| tag with the textof the post and write out to a file that is named after the \textsc{id} of the post:
+
+@d methods of the main program @{@%
+def printnaf(post_id, topic, author, post_date, text):
+    naf = KafNafParserPy.KafNafParser(filename = 'template.naf')
+    naf.set_language("en")
+    outtext = Contents_block(text)
+    naf.set_raw(outtext.without_bbcode())
+    @< create the naf header @>
+    naf.dump(filename = str(post_id) + ".naf")
+
+@| printnaf @}
+
+@o ../template.naf @{@%
+<?xml version="1.0" encoding="UTF-8"?>
+<NAF>
+  <nafHeader></nafHeader>
+</NAF>
+
+@| @}
+
+The following metadata goes in the \NAF{} header:
+\begin{itemize}
+\item Topic
+\item Author
+\item Date of the post.
+\end{itemize}
+
+@d create the naf header @{@%
+header = naf.get_header()
+fileDesc = KafNafParserPy.CfileDesc()
+header.set_fileDesc(fileDesc)
+fileDesc.set_title(topic)
+fileDesc.set_author(author)
+fileDesc.set_creationtime(convert_timestring(post_date))
+@| @}
+
+Find the time of the post. The time is expressed as a string like \verb|Mar 22 22:48|. This must be converted to an \textsc{iso} 8601 format. Therefore,
+create a datetime object from the time-string. The year does not seem to be included in the timestring. we have to solve this later.
+
+@d methods of the main program @{@%
+def convert_timestring(post_string):
+    [ monthname, daynum, time_of_day ] = post_string.split()
+    [ hour, minute ] = time_of_day.split(':')
+    year = 2016
+    pubdate = datetime.datetime(year, monthnums[monthname], int(daynum), int(hour), int(minute))
+    return pubdate.isoformat()
+
+    
+@| convert_timestring @}
+
+To convert month-names (e.g. ``Jan'') to month-numbers (e.g. 1), use the following dictionary. 
+
+@d variables of the main program @{@%
+monthnums = {v: k for k,v in enumerate(calendar.month_abbr)}
+@| monthnums @}
+
+
+@d import modules in main program @{@%
+import datetime
+import calendar
+@| datetime calendar@}
+
+\subsection{Remove mark-up from the text}
+\label{sec:nomarkup}
+
+The \textsc{html} pages of Ragingbull contain the text od the posts as \textsc{html} code or as ``bb-code''. A concise guide for bb-code can be found \href{https://msparp.com/bbcodeguide}{here}. 
+
+\begin{tabular}{lll}
+\textbf{tag}                      & \textbf{description} & \textbf{action} \\
+  \verb|[b], [/b]:                & boldface           & remove mark-up\\
+  \verb|[i], [/i]:                & italic             & remove mark-up \\
+  \verb|[u], [/u]:                & underline          & remove mark-up \\
+  \verb|[s], [/s]:                & strike-through     & remove tag \\
+  \verb|[color], [/color]:        & back-ground color  & remove mark-up \\
+  \verb|[center], [/center]:      & centered text      & remove mark-up \\
+  \verb|[quote], [/quote]:        & quotation          & Add quotation marks \\
+  \verb|[quote={name}], [/quote]: & quotation          & \verb|name said: `` ... ''\\
+  \verb|[url], [/url]:            & Link               & remove mark-up \\
+  \verb|[url={url}], [/url]:      & Link               & Leave the text. \\
+  \verb|[img ...], [/img]:        & image              & replace by ``image'' \\
+  \verb|[ul], [/ul]:              & Unordened list     & remove mark-up \\
+  \verb|[ol], [/ol]:              & ordened list       & remove mark-up \\
+  \verb|[list], [/list]:          & list               & remove mark-up \\
+  \verb|[li], [/li]:              & list item          &  \\
+  \verb|[code], [/code]:          & Verbatim           &  \\
+  \verb|[table], [/table]:        & table              &  \\
+  \verb|[tr], [/tr]:              & teble row          &  \\
+  \verb|[th], [/th]:              & table heading      &  \\
+  \verb|[td], [/td]:              & table cell         &  \\
+  \verb|[youtube], [/youtube]:    & URL to Youtube     &  remove mark-up \\
+  \verb|[gvideo], [/gvideo]:      & URL to video       &  remove mark-up \\
+\end{tabular}
+
+@d methods of the main program @{@%
+
+class Contents_block:
+        def __init__(self,intext):
+             self.intext = intext
+
+        def _strip_bbtag(self, intext, tagname):
+             s1 = intext.replace('[' + tagname + ']', '')
+             return s1.replace('[/' + tagname + ']', '')
+
+        def _strip_bbtagged_substring(self, intext, tagname):
+             pattern = re.compile('\[' + tagname + '\].*\[/' + tagname + '\]')
+             return re.sub(pattern, '', intext)
+
+        def _replace_bbtagged_substring(self, intext, tagname, repl):
+             pattern = re.compile('\[' + tagname + '\].*\[/' + tagname + '\]')
+             return re.sub(pattern, repl, intext)
+
+        def _unquote(self, intext):
+             out = self._strip_bbtag(intext, 'quote')
+             pattern = re.compile('\[quote=(.*)\](.*)\[/quote\]')
+             out = re.sub(pattern, '\1 said: "\2"', out)
+             return out
+
+        def _un_url(self, intext):
+             out = self._strip_bbtag(intext, 'url')
+             pattern = re.compile('\[url=(.*)\](.*)\[/url\]')
+             out = re.sub(pattern, '\2' + ' (' + '\1' + ')', out)
+             return out
+
+
+        def without_bbcode(self):
+             out = self._strip_bbtag(self.intext, 'b')
+             out = self._strip_bbtag(out, 'i')
+             out = self._strip_bbtag(out, 'u')
+             out = self._strip_bbtag(out, 'color')
+             out = self._strip_bbtag(out, 'youtube')
+             out = self._strip_bbtag(out, 'gvideo')
+             out = self._strip_bbtagged_substring(out, 's')
+             out = self._strip_bbtagged_substring(out, 'img')
+             out = self._unquote(out)
+             return out   
+
+@| @}
+
+@d import modules in main program @{@%
+import re
+@|re  @}
+
+
+
+\subsection{Test with a single "topic" page}
+\label{sec:testsetup}
+
+@d methods of the main program @{@%
+def get_testsoup():
+    if infile == 'none':
+        r = requests.get('m4_topicURL')
+        if r.status_code != 200:
+             print("Http request result: {}".format(r.status_code))
+             print("Error exit")
+             sys.exit()
+        soup = BeautifulSoup(r.content, 'lxml')
+    else:
+        with open(infile, 'r') as content_file:
+            content = content_file.read()
+        soup = BeautifulSoup(content, 'lxml')
+    return soup
+@| @}
 
 
 \subsection{The program file}
@@ -106,14 +331,20 @@ boardnum = m4_CEVTboardnum
 @o ../scrape.py @{@%
 
 @< import modules in main program @>
-@% @< variables of the main program @>
+import sys
+@< variables of the main program @>
 @< methods of the main program @>
 
 if __name__ == "__main__" :
     @< get program options @>
 @%    @< collect the URL's of the topics @>
-    @< print the testpost @>
-
+@%    @< print the testpost @>
+    soup = get_testsoup()
+    seq = 0
+    for [postid, posttime, postnum, author, author_url, text] in  next_article(soup):
+        seq += 1
+@%        print( "Author: {}".format(author))
+        printnaf(postid, "topic", author, posttime, text)
 @| @}
 
 
@@ -124,9 +355,6 @@ print_post(boardnum, "CEVT", "Gallup: life got better", 1, "juddism", datetime.d
 @| @}
 
 
-@d import modules in main program @{@%
-import datetime
-@| @}
 
 
 
@@ -799,8 +1027,8 @@ sources : m4_progname.w \$(DIRS)
 @%	m4_bindir/createdirs
 	\$(NUWEB) m4_progname.w
 
-jetty : sources
-	cd .. && mvn jetty:run
+test : sources
+	cd .. && python scrape.py m4_testfile
 
 @| @}
 
