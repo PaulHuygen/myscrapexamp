@@ -88,7 +88,7 @@ def print_post(board_id, board_name, topic, seq, author, post_date, text):
 \subsection{Read the command-line}
 \label{sec:read-commandline}
 
-I this demo-phase we can either parse url \url{m4_topicURL}, or parse
+In this demo-phase we can either parse url \url{m4_topicURL}, or parse
 a file of which the name is mentioned in the first argument.
 
 
@@ -112,6 +112,20 @@ from the forum.
 from bs4 import BeautifulSoup
 import requests
 @| bs4 BeautifulSoup requests @}
+
+\subsection{Extract the topic-title from a topic page}
+\label{sec:extract-topictitle}
+
+The title of the topic can be found as the contents of the ``title'' tag inside the ``head'' section of the html document:
+
+@d methods of the main program @{@%
+def get_topic(soup):
+   headpart = soup.head
+   title = headpart.title.string
+   return title
+@| @}
+
+
 
 \subsection{Extract the posts from a topic page}
 \label{sec:extractpost}
@@ -159,7 +173,7 @@ Generate the \NAF{} file with the \href{https://github.com/cltl/KafNafParserPy}{
 import KafNafParserPy
 @| @}
 
-If you construct a \naf{} from scratch, it doesn't have a header section. To work around this, we read in a template of a \NAF{} file
+If you construct a \NAF{} from scratch, it doesn't have a header section. To work around this, we read in a template of a \NAF{} file
 that contains an empty header. Fill in the header, add a \verb|raw| tag with the textof the post and write out to a file that is named after the \textsc{id} of the post:
 
 @d methods of the main program @{@%
@@ -230,28 +244,28 @@ The \textsc{html} pages of Ragingbull contain the text od the posts as \textsc{h
 
 \begin{tabular}{lll}
 \textbf{tag}                      & \textbf{description} & \textbf{action} \\
-  \verb|[b], [/b]:                & boldface           & remove mark-up\\
-  \verb|[i], [/i]:                & italic             & remove mark-up \\
-  \verb|[u], [/u]:                & underline          & remove mark-up \\
-  \verb|[s], [/s]:                & strike-through     & remove tag \\
-  \verb|[color], [/color]:        & back-ground color  & remove mark-up \\
-  \verb|[center], [/center]:      & centered text      & remove mark-up \\
-  \verb|[quote], [/quote]:        & quotation          & Add quotation marks \\
-  \verb|[quote={name}], [/quote]: & quotation          & \verb|name said: `` ... ''\\
-  \verb|[url], [/url]:            & Link               & remove mark-up \\
-  \verb|[url={url}], [/url]:      & Link               & Leave the text. \\
-  \verb|[img ...], [/img]:        & image              & replace by ``image'' \\
-  \verb|[ul], [/ul]:              & Unordened list     & remove mark-up \\
-  \verb|[ol], [/ol]:              & ordened list       & remove mark-up \\
-  \verb|[list], [/list]:          & list               & remove mark-up \\
-  \verb|[li], [/li]:              & list item          &  \\
-  \verb|[code], [/code]:          & Verbatim           &  \\
-  \verb|[table], [/table]:        & table              &  \\
-  \verb|[tr], [/tr]:              & teble row          &  \\
-  \verb|[th], [/th]:              & table heading      &  \\
-  \verb|[td], [/td]:              & table cell         &  \\
-  \verb|[youtube], [/youtube]:    & URL to Youtube     &  remove mark-up \\
-  \verb|[gvideo], [/gvideo]:      & URL to video       &  remove mark-up \\
+  \verb|[b], [/b]|:                & boldface           & remove mark-up\\
+  \verb|[i], [/i]|:                & italic             & remove mark-up \\
+  \verb|[u], [/u]|:                & underline          & remove mark-up \\
+  \verb|[s], [/s]|:                & strike-through     & remove tag \\
+  \verb|[color], [/color]|:        & back-ground color  & remove mark-up \\
+  \verb|[center], [/center]|:      & centered text      & remove mark-up \\
+  \verb|[quote], [/quote]|:        & quotation          & Add quotation marks \\
+  \verb|[quote={name}], [/quote]|: & quotation          & \verb|name said: `` ... ''| \\
+  \verb|[url], [/url]|:            & Link               & remove mark-up \\
+  \verb|[url={url}], [/url]|:      & Link               & Leave the text. \\
+  \verb|[img ...], [/img]|:        & image              & replace by ``image'' \\
+  \verb|[ul], [/ul]|:              & Unordened list     & remove mark-up \\
+  \verb|[ol], [/ol]|:              & ordened list       & remove mark-up \\
+  \verb|[list], [/list]|:          & list               & remove mark-up \\
+  \verb|[li], [/li]|:              & list item          &  \\
+  \verb|[code], [/code]|:          & Verbatim           &  \\
+  \verb|[table], [/table]|:        & table              &  \\
+  \verb|[tr], [/tr]|:              & teble row          &  \\
+  \verb|[th], [/th]|:              & table heading      &  \\
+  \verb|[td], [/td]|:              & table cell         &  \\
+  \verb|[youtube], [/youtube]|:    & URL to Youtube     &  remove mark-up \\
+  \verb|[gvideo], [/gvideo]|:      & URL to video       &  remove mark-up \\
 \end{tabular}
 
 @d methods of the main program @{@%
@@ -261,11 +275,13 @@ class Contents_block:
              self.intext = intext
 
         def _strip_bbtag(self, intext, tagname):
-             s1 = intext.replace('[' + tagname + ']', '')
-             return s1.replace('[/' + tagname + ']', '')
+             pattern = re.compile(r'\[' + tagname + r'\](.*)\[/' + tagname +  '\]')
+             return re.sub(pattern, r'\1', intext)
+@%             s1 = intext.replace('[' + tagname + ']', '')
+@%             return s1.replace('[/' + tagname + ']', '')
 
         def _strip_bbtagged_substring(self, intext, tagname):
-             pattern = re.compile('\[' + tagname + '\].*\[/' + tagname + '\]')
+             pattern = re.compile(r'\[' + tagname + r'\].*\[/' + tagname + r'\]')
              return re.sub(pattern, '', intext)
 
         def _replace_bbtagged_substring(self, intext, tagname, repl):
@@ -274,14 +290,15 @@ class Contents_block:
 
         def _unquote(self, intext):
              out = self._strip_bbtag(intext, 'quote')
-             pattern = re.compile('\[quote=(.*)\](.*)\[/quote\]')
-             out = re.sub(pattern, '\1 said: "\2"', out)
+             pattern = re.compile(r'\[quote=([^\]]*)\](.*)\[/quote\]')
+             out = re.sub(pattern, r'\1 said: "\2"', out)
              return out
 
         def _un_url(self, intext):
-             out = self._strip_bbtag(intext, 'url')
-             pattern = re.compile('\[url=(.*)\](.*)\[/url\]')
-             out = re.sub(pattern, '\2' + ' (' + '\1' + ')', out)
+             pattern = re.compile(r'\[url\](.*)\[/url\]')
+             out = re.sub(pattern, r'\1', intext)
+             pattern = re.compile(r'\[url=([^\]]*)\](.*)\[/url\]')
+             out = re.sub(pattern, r'\2' + r' (' + r'\1' + r')', intext)
              return out
 
 
@@ -295,6 +312,7 @@ class Contents_block:
              out = self._strip_bbtagged_substring(out, 's')
              out = self._strip_bbtagged_substring(out, 'img')
              out = self._unquote(out)
+             out = self._un_url(out)
              return out   
 
 @| @}
@@ -344,7 +362,7 @@ if __name__ == "__main__" :
     for [postid, posttime, postnum, author, author_url, text] in  next_article(soup):
         seq += 1
 @%        print( "Author: {}".format(author))
-        printnaf(postid, "topic", author, posttime, text)
+        printnaf(postid, get_topic(soup), author, posttime, text)
 @| @}
 
 
