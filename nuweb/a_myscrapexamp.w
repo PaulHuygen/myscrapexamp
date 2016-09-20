@@ -88,19 +88,19 @@ def print_post(board_id, board_name, topic, seq, author, post_date, text):
 \subsection{Read the command-line}
 \label{sec:read-commandline}
 
-In this demo-phase we can either parse url \url{m4_topicURL}, or parse
-a file of which the name is mentioned in the first argument.
-
+In this demo-phase we parse the board ``Oil and Natural Gas
+Investments'' (board number m4_oil_gas_board). Scrape the Wayback archive of this board (\textsc{url}:
+\url{m4_warch(m4_board_url(m4_oil_gas_board))}).
 
 @d get program options @{@%
-boardnum = m4_CEVTboardnum
-topicURL = "m4_topicURL"
+boardURL = 'm4_warch(m4_board_url(m4_oil_gas_board))'
+boardDIR = str(m4_oil_gas_board)
 
-infile = 'none'
-if len(sys.argv) > 1:
-    infile = sys.argv[1]
+@% infile = 'none'
+@% if len(sys.argv) > 1:
+@%     infile = sys.argv[1]
 
-@| boardnum topicURL @}
+@| boardURL @}
 
 \subsection{BeautifulSoup}
 \label{sec:beautifulsoup}
@@ -112,6 +112,19 @@ from the forum.
 from bs4 import BeautifulSoup
 import requests
 @| bs4 BeautifulSoup requests @}
+
+\subsection{Make soup from an URL}
+\label{sec:makesoup}
+
+@d methods of the main program @{@%
+def make_soup_from_url(url):
+    r = requests.get(url)
+    soup = None
+    if r.status_code == 200:
+       soup = BeautifulSoup(r.content, 'lxml')
+    print("{}: {}".format(r.status_code, url))
+    return soup
+@|make_soup_from_url @}
 
 \subsection{Extract the topic-title from a topic page}
 \label{sec:extract-topictitle}
@@ -125,13 +138,98 @@ def get_topic(soup):
    return title
 @| @}
 
+\subsection{Extract the topics from a board page}
+\label{sec:extract_topics}
+
+A board page contains the data to find the topics that belong to the
+board. Often the board page has sequel pages with older topics. Sequel
+pages can be found by appending \verb|/page/<nn>| to the \URL of the
+board page.
+
+The following (recursive) method yields a list of the \URL{}'s , the
+ID's and the titles of the topics in a board page.
+
+@d methods of the main program @{@%
+def next_topic(base_url, pagenumber = 1):
+   if pagenumber > 1:
+      board_url = "{}/page/{}".format(base_url, pagenumber)
+   else:
+      board_url = base_url
+   soup = make_soup_from_url(board_url)
+   if soup == None:
+      return
+   else:
+      @< yield topic data from soup @>
+      pagenumber += 1
+      for tdata in next_topic(base_url, pagenumber):
+          yield tdata
+
+@| next_topic @}
+
+
+A board web-page hides the data of a topic in an anchor in a table
+with class attribute \texttt{topics}. So, let us go down to the body
+of the page, find the table an the anchors.
+
+The method \verb|is_topic_table| determine whether a tag found in
+the page is the table with the topics. The method
+\verb|is_topicanchor| does a similar thing to find the anchor that
+leads to the topic page.
+
+@d methods of the main program @{@%
+def is_topictable(tag):
+    if tag.name == 'table':
+        if tag.has_attr('class'):
+            return tag['class'][0] == 'topics'
+    return False
+
+def is_topicanchor(tag):
+    if tag.name == 'a':
+        if tag.has_attr('class'):
+            return tag['class'][0] == 'topic-name'
+    return False
+
+@| @}
+
+Find the anchors.
+
+@d yield topic data from soup @{@%
+sbody = soup.body
+topictabletag = sbody.find(is_topictable)
+for topicanchor in topictabletag.find_all(is_topicanchor):
+    url = 'http://web.archive.org' + topicanchor['href']
+    m = re.search(topicpattern, topicanchor['href'])
+    id = m.group(1)
+    title = topicanchor['title'].strip()
+    yield [url, id, title]
+
+@| @}
+
+
+
+
+
+@%@d methods of the main program @{@%
+@%def topics(soup):
+@%   for tsoup in soup.find_all('table'):
+@%     if 
+@%   tsoup = soup.find
+@%@| @}
+
 
 
 \subsection{Extract the posts from a topic page}
 \label{sec:extractpost}
 
 A topic page contains a number of posts, wrapped in
-\verb|<article>|/\verb|</article>| tags. Between these two tags we can
+\verb|<article>|/\verb|</article>| tags.
+
+When there are many posts in a topic, there will be subsequent pages
+with posts. We can just try to find such pages (with \verb|/page/<n>|)
+suffix until we get a ``400'' result, or we can scrape \URL{}'s.
+
+
+Between the \verb|<article>| and \verb|</article>| tags we can
 find:
 \begin{description}
 \item[Post-id:] as argument ``id'' in the \verb|article| tag.
@@ -140,27 +238,79 @@ find:
 \end{description}
 
 
+When we pass the \URL{} to the following function \verb|next_article|,
+it will yield the texts and metadata of the articles:
+
+
 @d methods of the main program @{@%
 
-def next_article(soup, postnum=0):
-     for article in soup.find_all("article"):
-         postnum += 1
-         header = article.header
-         for sp in header.find_all("span"):
-             if sp['class'][0] == "postId":
-                 postid = sp.string
-             elif sp['class'][0] == "time":
-                 posttime = sp.string
-         for div in header.find_all("div"):
-             if div['class'][0] =="author-and-time":
-                 for anchor in div.find_all("a"):
-                     if anchor['class'][0] == "author-name":
-                         author=anchor.string
-                         author_url = anchor.href
-         text = article.textarea.string         
-         yield [ postid, posttime, postnum, author, author_url, text ] 
+def next_article(topic_base_url, pagenumber = 1):
+   if pagenumber > 1:
+      topic_url = "{}/page/{}".format(topic_base_url, pagenumber)
+   else:
+      topic_url = topic_base_url
+   soup = make_soup_from_url(topic_url)
+   if soup == None:
+      return
+   else:
+      @< yield data from articles in this soup @>
+      pagenumber += 1
+      for tdata in next_article(topic_base_url, pagenumber):
+          yield tdata
+
+@%   try:
+@%      soup = get_soup_of(topic_url)
+@%   except Exception as exc:
+@%      print('Cannot make soup from {}'.format(topic_url))
+@%      return
+@%   yield scrape_topic_soup(soup)
+@%   pagenumber += 1
+@%   yield next_article(topic_base_url, pagenumber)
+@% def next_article(soup, postnum=0):
+@%      for article in soup.find_all("article"):
+@%          postnum += 1
+@%          header = article.header
+@%          for sp in header.find_all("span"):
+@%              if sp['class'][0] == "postId":
+@%                  postid = sp.string
+@%              elif sp['class'][0] == "time":
+@%                  posttime = sp.string
+@%          for div in header.find_all("div"):
+@%              if div['class'][0] =="author-and-time":
+@%                  for anchor in div.find_all("a"):
+@%                      if anchor['class'][0] == "author-name":
+@%                          author=anchor.string
+@%                          author_url = anchor.href
+@%          text = article.textarea.string         
+@%          yield [ postid, posttime, postnum, author, author_url, text ] 
 
 @| nextarticle @}
+
+The posts of the topic can be found in \verb|article| tags.
+
+@d yield data from articles in this soup @{@%
+sbody = soup.body
+postnum = 0
+for article in soup.find_all("article"):
+    postnum += 1
+    header = article.header
+    for sp in header.find_all("span"):
+        if sp['class'][0] == "postId":
+            postid = sp.string
+        elif sp['class'][0] == "time":
+            posttime = sp.string
+    for div in header.find_all("div"):
+        if div['class'][0] =="author-and-time":
+            for anchor in div.find_all("a"):
+                if anchor['class'][0] == "author-name":
+                    author=anchor.string
+                    author_url = anchor.href
+    if author == None:
+       author = "Anonymus"
+    text = article.textarea.string         
+    yield [ postid, posttime, postnum, author, author_url, text ] 
+
+@|sbody postnum @}
 
 
 \subsection{Generate the NAF file}
@@ -177,13 +327,16 @@ If you construct a \NAF{} from scratch, it doesn't have a header section. To wor
 that contains an empty header. Fill in the header, add a \verb|raw| tag with the textof the post and write out to a file that is named after the \textsc{id} of the post:
 
 @d methods of the main program @{@%
-def printnaf(post_id, topic, author, post_date, text):
+def printnaf(nafpath, topic, author, post_date, text):
     naf = KafNafParserPy.KafNafParser(filename = 'template.naf')
     naf.set_language("en")
     outtext = Contents_block(text)
     naf.set_raw(outtext.without_bbcode())
     @< create the naf header @>
-    naf.dump(filename = str(post_id) + ".naf")
+@%    naf.dump(filename = str(post_id) + ".naf")
+    print("To write naf in {}".format(nafpath))
+    naf.dump(filename = nafpath)
+    print("Wrote {}".format(nafpath))
 
 @| printnaf @}
 
@@ -211,16 +364,34 @@ fileDesc.set_author(author)
 fileDesc.set_creationtime(convert_timestring(post_date))
 @| @}
 
-Find the time of the post. The time is expressed as a string like \verb|Mar 22 22:48|. This must be converted to an \textsc{iso} 8601 format. Therefore,
-create a datetime object from the time-string. The year does not seem to be included in the timestring. we have to solve this later.
+Find the time of the post. 
+Sometimes the time-stamp is a string like \texttt{2013-09-09 16:04},
+but in other instances it is expressed like \verb|Mar 22 22:48|. We
+must find out what kind of string it is and then convert the time-stamp
+to the \textsc{iso} 8601 format. It
+\href{http://stackoverflow.com/questions/127803/how-to-parse-an-iso-8601-formatted-date-in-python}{turns out} 
+that the 
+\href{http://dateutil.readthedocs.io/en/stable/parser.html}{python-dateutil} parser can read in both formats. So:
+
+
+@d import modules in main program @{@%
+import dateutil.parser
+@| dateutil.parser @}
+
+
 
 @d methods of the main program @{@%
 def convert_timestring(post_string):
-    [ monthname, daynum, time_of_day ] = post_string.split()
-    [ hour, minute ] = time_of_day.split(':')
-    year = 2016
-    pubdate = datetime.datetime(year, monthnums[monthname], int(daynum), int(hour), int(minute))
-    return pubdate.isoformat()
+   pubtime = dateutil.parser.parse(post_string)
+   return pubtime.isoformat()
+@%    time_elements = post_string.split()
+@%    if len(time_elements) == 2:
+@%       [ monthname
+@%       [ monthname, daynum, time_of_day ] = post_string.split()
+@%       [ hour, minute ] = time_of_day.split(':')
+@%    year = 2016
+@%    pubdate = datetime.datetime(year, monthnums[monthname], int(daynum), int(hour), int(minute))
+@%    return pubdate.isoformat()
 
     
 @| convert_timestring @}
@@ -317,30 +488,44 @@ class Contents_block:
 
 @| @}
 
-@d import modules in main program @{@%
-import re
-@|re  @}
 
 
 
-\subsection{Test with a single "topic" page}
-\label{sec:testsetup}
+\subsection{Scrape a board}
+\label{sec:scrapeboard}
 
 @d methods of the main program @{@%
-def get_testsoup():
-    if infile == 'none':
-        r = requests.get('m4_topicURL')
-        if r.status_code != 200:
-             print("Http request result: {}".format(r.status_code))
-             print("Error exit")
-             sys.exit()
-        soup = BeautifulSoup(r.content, 'lxml')
-    else:
-        with open(infile, 'r') as content_file:
-            content = content_file.read()
-        soup = BeautifulSoup(content, 'lxml')
+def get_boardsoup():
+    r = requests.get(boardURL)
+    if r.status_code != 200:
+         print("Board page {}".format(boardURL))
+         print("Http request result: {}".format(r.status_code))
+         print("Error exit")
+         sys.exit()
+    soup = BeautifulSoup(r.content, 'lxml')
     return soup
+@|get_boardsoup @}
+
+
+@d methods of the main program @{@%
+
+
+def topics(soup):
+    sbody = soup.body
+    topictabletag = sbody.find(is_topictable)
+    for topicanchor in topictabletag.find_all(is_topicanchor):
+        m = re.search(topicpattern, topicanchor['href'])
+        title = topicanchor['title'].strip()
+@%        yield [m.group(1), title]
+        yield ['http://web.archive.org' + topicanchor['href'], m.group(1), title]
+
 @| @}
+
+@d variables of the main program @{@%
+topicpattern = re.compile('.*/(.*)')
+@| @}
+
+
 
 
 \subsection{The program file}
@@ -350,19 +535,40 @@ def get_testsoup():
 
 @< import modules in main program @>
 import sys
+import os
+import re
 @< variables of the main program @>
 @< methods of the main program @>
 
 if __name__ == "__main__" :
     @< get program options @>
-@%    @< collect the URL's of the topics @>
-@%    @< print the testpost @>
-    soup = get_testsoup()
-    seq = 0
-    for [postid, posttime, postnum, author, author_url, text] in  next_article(soup):
-        seq += 1
+    
+    for [topic_url, topic_id, toptitle ] in next_topic(boardURL):
+       topicDIR = str(boardDIR) + '/' + str(topic_id)
+       print("{}: {}".format(topicDIR, toptitle))
+       os.makedirs(topicDIR, exist_ok = True)
+       for [postid, posttime, postnum, author, author_url, text] in  next_article(topic_url):
+           outpath = topicDIR + '/' + str(postid) + '.naf'
+           printnaf(outpath, toptitle, author, posttime, text)
+         
+
+@%    bsoup = make_soup_from(boardURL)
+@%    os.makedirs(boardDIR, exist_ok = True)
+@%    for [topic_url, topic_id, toptitle ] in topics(bsoup):
+@%      topicDIR = str(boardDIR) + '/' + str(topic_id)
+@%      topicURL = 'm4_warch(http://ragingbull.com)' + '/forum/topic/' + str(topic_id)
+@%      topic_url = 'm4_warch(http://ragingbull.com)' + '/forum/topic/' + str(topic_id)
+@%      print("{}: {}".format(topicDIR, toptitle))
+@%      os.makedirs(topicDIR, exist_ok = True)
+@%      for [postid, posttime, postnum, author, author_url, text] in  next_article(topic_url):
+@%        outpath = topicDIR + '/' + str(postid) + '.naf'
+@%        printnaf(outpath, get_topic(soup), author, posttime, text)
+      
+@%     postnum = 0
+@%     for [postid, posttime, postnum, author, author_url, text] in  next_article(soup):
+@%         postnum += 1
 @%        print( "Author: {}".format(author))
-        printnaf(postid, get_topic(soup), author, posttime, text)
+@%         printnaf(postid, get_topic(soup), author, posttime, text)
 @| @}
 
 
@@ -1046,7 +1252,7 @@ sources : m4_progname.w \$(DIRS)
 	\$(NUWEB) m4_progname.w
 
 test : sources
-	cd .. && python scrape.py m4_testfile
+	cd .. && python scrape.py
 
 @| @}
 

@@ -45,10 +45,18 @@ m4_dnl
 m4_dnl Miscellaneous
 m4_dnl
 m4_dnl m4_define(m4_tarurl, `ragingbull.com')m4_dnl
-m4_define(m4_tarurl, `http://web.archive.org/web/20160323072944/http://ragingbull.com')m4_dnl
+m4_dnl m4_define(m4_warch_snapshot_time, 20160323072944)m4_dnl
+m4_define(m4_warch_snapshot_time, 20160323073042)m4_dnl
+m4_define(m4_warch, http://web.archive.org/web/m4_warch_snapshot_time/$1)m4_dnl
+m4_dnl m4_define(m4_tarurl, `http://web.archive.org/web/20160323072944/http://ragingbull.com')m4_dnl
+m4_define(m4_tarurl, `http://web.archive.org/web/20160323073042/http://ragingbull.com')m4_dnl
 m4_define(m4_CEVTboardnum, `14242')m4_dnl
-m4_define(m4_topicURL, `http://web.archive.org/web/20160719235030/http://ragingbull.com/forum/topic/1051970')
+m4_define(m4_oil_gas_board, 11677)m4_dnl
+m4_define(m4_board_url, http://ragingbull.com/forum/board/$1)m4_dnl
+m4_define(m4_topicURL, `http://web.archive.org/web/20160719235030/http://ragingbull.com/forum/topic/1051970')m4_dnl
 m4_define(m4_testfile, `1051970')m4_dnl
+m4_define(m4_ragingbull_board_url, http://ragingbull.com/forum/board/$1)m4_dnl
+m4_define(m4_arch_ragingbull_board_url, http://web.archive.org/web/20160719235030/http://ragingbull.com/forum/board/$1)m4_dnl
 m4_dnl
 m4_dnl max times to compile with LaTeX.
 m4_dnl

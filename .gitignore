@@ -1,10 +1,14 @@
 # Compiled source #
 ###################
 *.aux
-*.log
 *.bbl
 *.blg
 *.idx
+*.ilg
+*.ind
+*.log
+*.out
+*.toc
 nw00
 m4_*.w
 nuweb/myscrapexamp.w

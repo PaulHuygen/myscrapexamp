@@ -96,6 +96,6 @@ sources : myscrapexamp.w $(DIRS)
 	$(NUWEB) myscrapexamp.w
 
 test : sources
-	cd .. && python scrape.py 1051970
+	cd .. && python scrape.py
 
 
