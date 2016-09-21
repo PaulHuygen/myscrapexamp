@@ -142,27 +142,37 @@ def get_topic(soup):
 \label{sec:extract_topics}
 
 A board page contains the data to find the topics that belong to the
-board. Often the board page has sequel pages with older topics. Sequel
-pages can be found by appending \verb|/page/<nn>| to the \URL of the
-board page.
+board. Often the board page has sequel-pages with older
+topics. Sequel-pages can be found by appending \verb|/page/<nn>| to
+the \URL of the board page. In the Wayback machine, sequel-pages may
+be missing. Therefore we can not download sequel-pages until we get
+status 404 (not found), but we have to find out how many sequel-pages
+there are and step over missing sequel-pages.
 
 The following (recursive) method yields a list of the \URL{}'s , the
-ID's and the titles of the topics in a board page.
+ID's and the titles of the topics in a board page. When the method
+opens the first board-page, it looks for the number of sequel-pages
+(packed in a navigation-panel on the bottom of the page) and stores it in
+variable \verb|nr_pages|. 
 
 @d methods of the main program @{@%
-def next_topic(base_url, pagenumber = 1):
+def next_topic(base_url, pagenumber = 1, nr_pages = 1):
    if pagenumber > 1:
       board_url = "{}/page/{}".format(base_url, pagenumber)
    else:
       board_url = base_url
    soup = make_soup_from_url(board_url)
-   if soup == None:
+   if soup == None and pagenumber == 1:
       return
-   else:
+   if soup != None:
       @< yield topic data from soup @>
-      pagenumber += 1
-      for tdata in next_topic(base_url, pagenumber):
-          yield tdata
+   if pagenumber == 1:
+      nr_pages = last_pagenum(soup)
+   pagenumber += 1
+   if pagenumber <= nr_pages:
+      for tdata in next_topic(base_url, pagenumber, nr_pages):
+         yield tdata
+   return
 
 @| next_topic @}
 
@@ -205,16 +215,74 @@ for topicanchor in topictabletag.find_all(is_topicanchor):
 
 @| @}
 
-
-
-
-
 @%@d methods of the main program @{@%
 @%def topics(soup):
 @%   for tsoup in soup.find_all('table'):
 @%     if 
 @%   tsoup = soup.find
 @%@| @}
+
+\subsection{Find out number of sequel-pages}
+\label{sec:nr-sequel-pages}
+
+Method \verb|last_pagenum| finds out how many sequel pages there
+are. The  method is used in \verb|next_topic| above and it will be
+used later on to determine how many pages there are that contain
+articles about a given topic.
+
+To construct the \URL{} of a sequel-page, stick string
+\verb|/page/<n>| at the end of the \URL{} of the first page
+(\verb|<n>| being a number). The \verb|<n>| in the anchor that leads
+to the last sequel-page is the number that we are going to find.
+
+Looking at the pages, it seems that the navigation-panel is wrapped in
+a \verb|div| of class ``\verb|pagination pagination-centered|'' that
+is wrapped in a \verb|section| of class \verb|two-columns|.
+
+The following two function determine whether a given tag is the
+\verb|section| resp. \verb|div| dag described above.
+
+
+@d methods of the main program @{@%
+def is_twocolumn_section(tag):
+    if tag.name == 'section':
+        if tag.has_attr('class'):
+            return tag['class'][0] == 'two-columns'
+    return False
+
+def is_pagination_div(tag):
+    if tag.name == 'div':
+        if tag.has_attr('class'):
+            return tag['class'][0] == 'pagination'
+    return False
+
+@|is_twocolumn_section is_pagination_div @}
+
+@d methods of the main program @{@%
+
+def last_pagenum(soup):
+   pattern = re.compile("/page/(.*)")
+   sbody = soup.body
+   sectt = soup.find(is_twocolumn_section)
+   pagecount = 1
+   if sectt == None:
+       return pagecount
+   pagdivt = sectt.find(is_pagination_div)    
+   if pagdivt == None:
+       return pagecount
+   for anch in pagdivt.find_all("a"):
+       if anch.has_attr('href'):
+           url = anch['href'] 
+           m = re.search(pattern, url)
+           if m:
+              number = int(m.group(1))
+              if number > pagecount:
+                 pagecount = number
+   print("Pagecount: {}".format(pagecount))
+   return pagecount
+   
+@|last_pagenum @}
+
 
 
 
@@ -244,20 +312,23 @@ it will yield the texts and metadata of the articles:
 
 @d methods of the main program @{@%
 
-def next_article(topic_base_url, pagenumber = 1):
+def next_article(base_url, pagenumber = 1, nr_pages = 1):
    if pagenumber > 1:
-      topic_url = "{}/page/{}".format(topic_base_url, pagenumber)
+      topic_url = "{}/page/{}".format(base_url, pagenumber)
    else:
-      topic_url = topic_base_url
+      topic_url = base_url
    soup = make_soup_from_url(topic_url)
-   if soup == None:
+   if soup == None and pagenumber == 1:
       return
-   else:
+   if soup != None:
       @< yield data from articles in this soup @>
+      if pagenumber == 1:
+         nr_pages = last_pagenum(soup)
       pagenumber += 1
-      for tdata in next_article(topic_base_url, pagenumber):
-          yield tdata
-
+      if pagenumber <= nr_pages:
+         for tdata in next_article(base_url, pagenumber, nr_pages):
+             yield tdata
+      return
 @%   try:
 @%      soup = get_soup_of(topic_url)
 @%   except Exception as exc:
@@ -285,6 +356,8 @@ def next_article(topic_base_url, pagenumber = 1):
 @%          yield [ postid, posttime, postnum, author, author_url, text ] 
 
 @| nextarticle @}
+
+
 
 The posts of the topic can be found in \verb|article| tags.
 
@@ -334,11 +407,15 @@ def printnaf(nafpath, topic, author, post_date, text):
     naf.set_raw(outtext.without_bbcode())
     @< create the naf header @>
 @%    naf.dump(filename = str(post_id) + ".naf")
-    print("To write naf in {}".format(nafpath))
-    naf.dump(filename = nafpath)
-    print("Wrote {}".format(nafpath))
+    if os.path.isfile(nafpath):
+       print("Not writing existing naf {}".format(nafpath))
+    else: 
+       print("To write naf in {}".format(nafpath))
+       naf.dump(filename = nafpath)
+       print("Wrote {}".format(nafpath))
 
 @| printnaf @}
+
 
 @o ../template.naf @{@%
 <?xml version="1.0" encoding="UTF-8"?>
@@ -347,6 +424,11 @@ def printnaf(nafpath, topic, author, post_date, text):
 </NAF>
 
 @| @}
+
+@d import modules in main program @{@%
+import os.path
+@|os.path @}
+
 
 The following metadata goes in the \NAF{} header:
 \begin{itemize}
