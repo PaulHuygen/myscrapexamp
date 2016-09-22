@@ -96,6 +96,9 @@ sources : myscrapexamp.w $(DIRS)
 	$(NUWEB) myscrapexamp.w
 
 test : sources
-	cd .. && python scrape.py
+	cd .. && rm -f nohup.out
+	cd .. && touch nohup.out
+	cd .. && nohup python scrape.py &
+	tail -f ../nohup.out
 
 

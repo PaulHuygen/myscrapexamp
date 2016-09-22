@@ -39,21 +39,46 @@ subjects. Each board has an identifying number and a name, e.g. board
 m4_CEVTboardnum is about \emph{Current Events}, abbreviated as
 \textsc{cevt}. The main page of that board has as \textsc{url}:
 \url{m4_tarurl/board/m4_CEVTboardnum}. It contains a table with a list
-of topics and, when there are too many topics for a single page, references to other \textsc{url}'s that contain lists of
-older topics. These \textsc{url}'s look like
+of topics and, when there are too many topics for a single page,
+references to other \textsc{url}'s that contain lists of older
+topics. These \textsc{url}'s look like
 \url{m4_tarurl/board/m4_CEVTboardnum/page/2}.
 
 A topic has as url e.g. \url{m4_tarurl/topic/1061702} and a title. The
 page of the topic contains a list of posts. 
 
+I have not yet found a  comprehensive list of the boards. 
+
+In september 2016, the site \url{ragingbull.com} seems to be
+dead. When you try to open a post in the browser, you get a text
+saying that the site is down for maintainance. Therefore, we will
+scrape from Wayback.
+
+
+\subsection{Scrape from wayback}
+\label{sec:scrpefromwayback}
+
+Wayback may contain ``captures'' of an \URL{} taken on different
+points in time. There is an \textsc{api} that can provide a list of
+cqptures of a given \URL{}. With this list \URL's that retrieve the
+captures can be constructed. A description of the \textsc{api} can be
+found
+\href{https://github.com/internetarchive/wayback/tree/master/wayback-cdx-server}{here}.
+
+
 \subsection{What are we going to do?}
 \label{sec:what}
 
 \begin{enumerate}
-\item Read the pages of the board and collect the url's of the topics
+\item Make a list of \URL's of archived copies of a board-page.
+\item Download each copy in the scraper.
+\item Read the pages of each copy and collect the url's of the topics
 \item Read the pages of the topics and extract the posts.
 \item Wrap each post (text and metadata) in a \textsc{naf} file.
 \end{enumerate}
+
+
+
 
 \subsection{Metadata}
 \label{sec:metadata}
@@ -93,14 +118,58 @@ Investments'' (board number m4_oil_gas_board). Scrape the Wayback archive of thi
 \url{m4_warch(m4_board_url(m4_oil_gas_board))}).
 
 @d get program options @{@%
-boardURL = 'm4_warch(m4_board_url(m4_oil_gas_board))'
+boardNUM = m4_oil_gas_board
+boardURL = 'm4_board_url(m4_oil_gas_board)'
 boardDIR = str(m4_oil_gas_board)
 
 @% infile = 'none'
 @% if len(sys.argv) > 1:
 @%     infile = sys.argv[1]
 
-@| boardURL @}
+@| boardURL boardNUM boardDIR @}
+
+
+\subsection{Get a list of Wayback-copies}
+\label{sec:get-wayback-list}
+
+
+To get a list of \URL{}'s to copies of a page in Wayback, send a query
+to the API-server. Variable \verb|wayquery_template| is a template of
+such a query in which the \URL{} of the original page has to be filled
+in. The query results in a list with properties for each ``captured''
+copy. We need to know whether the capture has been successful at the
+time (http status-code, should be 200) and the timestamp of the
+capture. To request a capture, fill the timestamp and the \URL{} of
+the original page into the variable \verb|url_template|.
+
+@d variables of the main program @{@%
+wayquery_template = 'http://web.archive.org/cdx/search/cdx?url={}&collapse=digest&output=json'
+@% url_template = 'http://wayback.archive.org/web/{}id_/{}'
+url_template = 'http://wayback.archive.org/web/{}/{}'
+@| @}
+
+
+The following method performs the query and yields a list of \URL's of captures.
+
+@d methods of the main program @{@%
+
+def wb_urls(basis_url):
+   wayquery = wayquery_template.format(basis_url)
+   r = requests.get(wayquery)
+   if r.status_code != 200:
+       return
+   ulist = r.json()
+   lhead = ulist.pop(0)
+   for rij in ulist:
+       timestamp = rij[lhead.index('timestamp')]
+       status = rij[lhead.index('statuscode')]
+       if int(status) != int(200):
+          continue
+       yield url_template.format(timestamp, basis_url)
+
+@| wb_urls @}
+
+
 
 \subsection{BeautifulSoup}
 \label{sec:beautifulsoup}
@@ -624,14 +693,15 @@ import re
 
 if __name__ == "__main__" :
     @< get program options @>
-    
-    for [topic_url, topic_id, toptitle ] in next_topic(boardURL):
-       topicDIR = str(boardDIR) + '/' + str(topic_id)
-       print("{}: {}".format(topicDIR, toptitle))
-       os.makedirs(topicDIR, exist_ok = True)
-       for [postid, posttime, postnum, author, author_url, text] in  next_article(topic_url):
-           outpath = topicDIR + '/' + str(postid) + '.naf'
-           printnaf(outpath, toptitle, author, posttime, text)
+    for wb_url in wb_urls(boardURL):
+       print("Scrape {}".format(wb_url))
+       for [topic_url, topic_id, toptitle ] in next_topic(wb_url):
+          topicDIR = str(boardDIR) + '/' + str(topic_id)
+          print("{}: {}".format(topicDIR, toptitle))
+          os.makedirs(topicDIR, exist_ok = True)
+          for [postid, posttime, postnum, author, author_url, text] in  next_article(topic_url):
+              outpath = topicDIR + '/' + str(postid) + '.naf'
+              printnaf(outpath, toptitle, author, posttime, text)
          
 
 @%    bsoup = make_soup_from(boardURL)
@@ -654,14 +724,11 @@ if __name__ == "__main__" :
 @| @}
 
 
-For now, the program just prints a mock-up of a post:
-
-@d print the testpost @{@%
-print_post(boardnum, "CEVT", "Gallup: life got better", 1, "juddism", datetime.datetime.now(), "Come on now")
-@| @}
-
-
-
+@% For now, the program just prints a mock-up of a post:
+@% 
+@% @d print the testpost @{@%
+@% print_post(boardnum, "CEVT", "Gallup: life got better", 1, "juddism", datetime.datetime.now(), "Come on now")
+@% @| @}
 
 
 \appendix
@@ -669,8 +736,8 @@ print_post(boardnum, "CEVT", "Gallup: life got better", 1, "juddism", datetime.d
 \section{How to read and translate this document}
 \label{sec:translatedoc}
 
-This document is an example of \emph{literate
-  programming}~\cite{Knuth:1983:LP}. It contains the code of all sorts
+This document is an example of \emph{literate programming}~\cite{Knuth:1983:LP}.
+It contains the code of all sorts
 of scripts and programs, combined with explaining texts. In this
 document the literate programming tool \texttt{nuweb} is used, that is
 currently available from Sourceforge
@@ -1334,7 +1401,10 @@ sources : m4_progname.w \$(DIRS)
 	\$(NUWEB) m4_progname.w
 
 test : sources
-	cd .. && python scrape.py
+	cd .. && rm -f nohup.out
+	cd .. && touch nohup.out
+	cd .. && nohup python scrape.py &
+	tail -f ../nohup.out
 
 @| @}
 
